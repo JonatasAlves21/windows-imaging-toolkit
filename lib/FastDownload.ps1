@@ -21,7 +21,7 @@ function Get-RemoteFileFast {
         [Parameter(Mandatory)][string]$Uri,
         [Parameter(Mandatory)][string]$OutFile,
         [string]$ExpectedHash,
-        [ValidateSet('MD5', 'SHA256')][string]$Algorithm = 'MD5',
+        [ValidateSet('MD5', 'SHA1', 'SHA256')][string]$Algorithm = 'MD5',
         [ValidateRange(1, 16)][int]$Connections = 6,
         [switch]$Force
     )
@@ -32,14 +32,15 @@ function Get-RemoteFileFast {
 
     if ((Test-Path $OutFile) -and -not $Force) {
         if (-not $ExpectedHash) {
-            Write-Log "Ja existe (sem hash para conferir): $nome" 'OK'
-            return $OutFile
-        }
-        if ((Get-FileHash $OutFile -Algorithm $Algorithm).Hash -ieq $ExpectedHash) {
+            # Sem hash nao da para saber se o arquivo e o certo, nem se foi trocado
+            # depois do download: so o reaproveita quem puder conferir.
+            Write-Log "Ja existe, mas sem hash para conferir - baixando de novo: $nome" 'WARN'
+        } elseif ((Get-FileHash $OutFile -Algorithm $Algorithm).Hash -ieq $ExpectedHash) {
             Write-Log "Ja existe e o hash confere: $nome" 'OK'
             return $OutFile
+        } else {
+            Write-Log "Hash $Algorithm divergente no arquivo existente - baixando de novo: $nome" 'WARN'
         }
-        Write-Log 'Hash divergente no arquivo existente. Rebaixando.' 'WARN'
     }
 
     # --- descobrir tamanho e se o servidor aceita Range
@@ -201,7 +202,7 @@ function Get-RemoteFileSimple {
         [Parameter(Mandatory)][string]$Uri,
         [Parameter(Mandatory)][string]$OutFile,
         [string]$ExpectedHash,
-        [string]$Algorithm = 'MD5'
+        [ValidateSet('MD5', 'SHA1', 'SHA256')][string]$Algorithm = 'MD5'
     )
     $tmp = "$OutFile.part"
     $sw = [Diagnostics.Stopwatch]::StartNew()

@@ -44,6 +44,130 @@ function Assert-Admin {
     }
 }
 
+# SIDs em vez de nomes: em Windows pt-BR os nomes viram "Administradores" e
+# "SISTEMA", e um NTAccount('Administrators') nao resolveria.
+$script:SidsConfiaveis = @('S-1-5-32-544', 'S-1-5-18')   # Administradores, SYSTEM
+
+# Direitos que deixam alterar uma pasta ou o que esta nela: gravar, criar,
+# apagar, trocar ACL ou dono. Inclui GENERIC_ALL e GENERIC_WRITE, que aparecem
+# crus em ACEs herdaveis.
+$script:DireitosDeAlteracao = [int64][Security.AccessControl.FileSystemRights](
+    'WriteData, AppendData, WriteExtendedAttributes, DeleteSubdirectoriesAndFiles, ' +
+    'WriteAttributes, Delete, ChangePermissions, TakeOwnership') -bor 0x10000000 -bor 0x40000000
+
+function Format-Sid {
+    param([Parameter(Mandatory)][string]$Sid)
+    try { ([Security.Principal.SecurityIdentifier]$Sid).Translate([Security.Principal.NTAccount]).Value }
+    catch { $Sid }
+}
+
+<#
+    ACL de pasta de trabalho de processo elevado: sem heranca, controle total so
+    para Administradores e SYSTEM (herdado pelo conteudo), dono Administradores.
+#>
+function New-AclSoAdmin {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)   # corta a heranca sem copiar as ACEs herdadas
+    foreach ($sid in $script:SidsConfiaveis) {
+        $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]$sid,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow))
+    }
+    $acl.SetOwner([Security.Principal.SecurityIdentifier]$script:SidsConfiaveis[0])
+    return $acl
+}
+
+<#
+    Diz por que uma pasta pode ser alterada por quem nao e Administradores/SYSTEM,
+    ou devolve $null se nao pode. Com -Raiz (a propria pasta de trabalho) exige
+    tambem ACL sem heranca e confere as ACEs que so valem para o conteudo.
+#>
+function Get-BrechaDePasta {
+    param([Parameter(Mandatory)][string]$Path, [switch]$Raiz)
+
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer) { return "$Path nao e pasta" }
+    # Junction/symlink: a ACL lida seria a do destino, e o destino pode mudar.
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return "$Path e junction/symlink" }
+
+    try { $acl = Get-Acl -LiteralPath $Path }
+    catch { return "nao foi possivel ler a ACL de $Path ($($_.Exception.Message))" }
+
+    if ($Raiz -and -not $acl.AreAccessRulesProtected) { return "$Path herda permissoes da pasta-pai" }
+    foreach ($r in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        if ($r.AccessControlType -ne 'Allow') { continue }
+        if ($script:SidsConfiaveis -contains $r.IdentityReference.Value) { continue }
+        # ACE so-herdavel nao vale para a pasta em si; na raiz vale para o conteudo.
+        if (-not $Raiz -and ($r.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly)) { continue }
+        if ([int64]$r.FileSystemRights -band $script:DireitosDeAlteracao) {
+            return "$(Format-Sid $r.IdentityReference.Value) pode alterar $Path"
+        }
+    }
+    # Dono comum reescreve a ACL quando quiser, entao nao basta a ACL estar certa.
+    $dono = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if ($script:SidsConfiaveis -notcontains $dono) {
+        return "o dono de $Path e $(Format-Sid $dono), nao Administradores/SYSTEM"
+    }
+    return $null
+}
+
+<#
+    Cria ou confere a pasta de trabalho de um processo elevado.
+
+    POR QUE: na raiz do C:\ o Windows deixa "Usuarios autenticados" criar pasta, e
+    o que e criado ali herda Modify para eles. Uma pasta de trabalho nesse lugar
+    pode ser pre-criada ou alterada por qualquer usuario - e o conteudo dela (ISO
+    extraida, .msu) e injetado na imagem pelo DISM como administrador. Trocar o
+    padrao por $env:ProgramData nao resolve: la "Usuarios" tambem cria pasta.
+
+    Regras:
+      - pasta nova nasce num passo so com a ACL de New-AclSoAdmin: nao existe
+        instante em que ela fique com a heranca aberta da raiz;
+      - pasta que ja existe so e usada se ja estiver assim. Se nao estiver, RECUSA
+        em vez de corrigir: quem teve acesso pode ter deixado arquivo, junction ou
+        handle aberto, e trocar a ACL depois nao desfaz nada disso;
+      - as pastas-pai (abaixo da raiz do volume) tambem nao podem ser alteraveis
+        por usuario comum, senao ele renomeia o pai e troca a pasta inteira.
+#>
+function Initialize-PastaProtegida {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $Path       = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $raizVolume = [IO.Path]::GetPathRoot($Path).TrimEnd('\')
+    if ($Path -eq $raizVolume) { throw "A pasta de trabalho nao pode ser a raiz do volume ($Path)." }
+
+    $criada = $false
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $acl = New-AclSoAdmin
+        if ($PSVersionTable.PSEdition -eq 'Core') {
+            [IO.FileSystemAclExtensions]::Create([IO.DirectoryInfo]$Path, $acl)
+        } else {
+            ([IO.DirectoryInfo]$Path).Create($acl)
+        }
+        $criada = $true
+    }
+
+    # Confere ate a recem-criada: se outro usuario criou a pasta entre o teste e o
+    # Create, o Create nao falha - mas o dono e a ACL denunciam.
+    $pai = Split-Path $Path -Parent
+    while ($pai.TrimEnd('\') -ne $raizVolume) {
+        $brecha = Get-BrechaDePasta -Path $pai
+        if ($brecha) {
+            throw "Pasta-pai da area de trabalho insegura: $brecha. Use uma pasta direto na raiz do volume (ex.: C:\VentoyBuild)."
+        }
+        $pai = Split-Path $pai -Parent
+    }
+    $brecha = Get-BrechaDePasta -Path $Path -Raiz
+    if ($brecha) {
+        throw ("Area de trabalho nao confiavel: $brecha. O conteudo pode ter sido alterado por usuario comum. " +
+               "Apague a pasta (cmd /c rd /s /q `"$Path`") e rode de novo: ela sera recriada so com Administradores e SYSTEM.")
+    }
+    [pscustomobject]@{ Path = $Path; Criada = $criada }
+}
+
 <#
     Download com verificacao de hash.
 
@@ -57,7 +181,7 @@ function Get-RemoteFile {
         [Parameter(Mandatory)][string]$Uri,
         [Parameter(Mandatory)][string]$OutFile,
         [string]$ExpectedHash,
-        [ValidateSet('MD5','SHA256')][string]$Algorithm = 'MD5',
+        [ValidateSet('MD5','SHA1','SHA256')][string]$Algorithm = 'MD5',
         [int]$Connections = 6,
         [switch]$Force
     )
