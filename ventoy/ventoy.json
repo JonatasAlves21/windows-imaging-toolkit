@@ -1,0 +1,64 @@
+{
+  "control": [
+    { "VTOY_DEFAULT_MENU_MODE": "0" },
+    { "VTOY_SECONDARY_BOOT_MENU": "0" },
+    { "VTOY_FILT_DOT_UNDERSCORE_FILE": "1" },
+    { "VTOY_MENU_LANGUAGE": "pt_BR" },
+    { "VTOY_WIN11_BYPASS_CHECK": "1" },
+    { "VTOY_WIN11_BYPASS_NRO": "1" },
+    { "VTOY_DEFAULT_IMAGE": "/ISO/WIN11_UPD_24H2_202609.iso" }
+  ],
+
+  "menu_alias": [
+    {
+      "image": "/ISO/WIN11_UPD_24H2_202609.iso",
+      "alias": "Windows 11 Pro 24H2 pt-BR  >> USAR ESTA  [atualizada ago/2026 + drivers]"
+    },
+    {
+      "image": "/ISO/Win11_24H2_BrazilianPortuguese_x64.iso",
+      "alias": "Windows 11 24H2 pt-BR  [original jul/2025 - so como plano B]"
+    },
+    {
+      "image": "/ISO/lubuntu-26.04.1-desktop-amd64.iso",
+      "alias": "Lubuntu 26.04.1 Live  [resgate de dados / diagnostico]"
+    },
+    {
+      "image": "/ISO/HBCD_PE_x64.iso",
+      "alias": "Hiren's BootCD PE  [antigo - 2020, sem driver NVMe novo]"
+    }
+  ],
+
+  "menu_class": [
+    { "key": "WIN11_UPD", "class": "windows11" },
+    { "key": "Win11",     "class": "windows11" },
+    { "key": "Win10",     "class": "windows10" },
+    { "key": "lubuntu",   "class": "ubuntu" },
+    { "key": "HBCD",      "class": "winpe" }
+  ],
+
+  "menu_tip": [
+    {
+      "left": "10%",
+      "top":  "85%",
+      "color": "#00ff00",
+      "tips": [
+        {
+          "image": "/ISO/WIN11_UPD_24H2_202609.iso",
+          "tip": "Build 26100.9168 (KB5121003, ago/2026) + .NET 4.8.1 + drivers de rede e chipset embutidos. Instala sem precisar de cabo de rede e sem horas de Windows Update."
+        },
+        {
+          "image": "/ISO/Win11_24H2_BrazilianPortuguese_x64.iso",
+          "tip": "Imagem original de julho/2025. Vai baixar mais de um ano de Windows Update depois de instalar. Use so se a imagem atualizada falhar."
+        },
+        {
+          "image": "/ISO/lubuntu-26.04.1-desktop-amd64.iso",
+          "tip": "Live Linux leve. Use quando o Windows nao inicia e voce precisa salvar arquivos, testar se o disco e a rede respondem, ou navegar no HD sem montar o sistema. Escolha 'Try Lubuntu', nao 'Install'."
+        },
+        {
+          "image": "/ISO/HBCD_PE_x64.iso",
+          "tip": "Build de 2020. Pode nao enxergar SSD NVMe em maquina nova (falta driver Intel VMD/RST)."
+        }
+      ]
+    }
+  ]
+}

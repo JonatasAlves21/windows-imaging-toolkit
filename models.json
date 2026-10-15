@@ -1,0 +1,25 @@
+{
+  "descricao": "Parque de maquinas coberto pelo SSD Ventoy. Cada entrada vira um driver pack em <SSD>\\Drivers\\<fabricante>\\<modelo>. As entradas abaixo sao EXEMPLOS: troque pelos modelos do seu parque.",
+  "comoDescobrirAChave": {
+    "Dell": "Na maquina, rodar: (Get-CimInstance -Namespace root\\wmi -ClassName MS_SystemInformation).SystemSKU  -- retorna 4 caracteres, ex. 0C1E",
+    "Lenovo": "Na maquina, rodar: (Get-CimInstance Win32_ComputerSystem).Model.Substring(0,4)  -- retorna o Machine Type, ex. 21F6",
+    "atalho": "Ou simplesmente rode .\\Sync-DriverPacks.ps1 -Auto na maquina: ele detecta e baixa sozinho."
+  },
+  "atualizadoEm": "2026-09-04",
+  "modelos": [
+    {
+      "fabricante": "Dell",
+      "chave": "0C1E",
+      "nome": "Latitude 3540",
+      "ativo": true,
+      "origem": "exemplo (auto-detectado com -Auto)"
+    },
+    {
+      "fabricante": "Lenovo",
+      "chave": "21F6",
+      "nome": "exemplo Lenovo",
+      "ativo": false,
+      "origem": "exemplo desativado - mostra o formato da entrada Lenovo"
+    }
+  ]
+}
