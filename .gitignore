@@ -1,0 +1,30 @@
+# Binarios do Windows ADK (licenca Microsoft - nao redistribuir).
+# Veja bin/README.md para obter o oscdimg.exe.
+bin/*
+!bin/README.md
+
+# Cache dos catalogos Dell/Lenovo (baixado em tempo de execucao)
+catalog/
+
+# Artefatos pesados que nunca devem ir para o repositorio
+*.iso
+*.iso.sha256
+*.wim
+*.esd
+*.msu
+*.cab
+*.exe
+Drivers/
+_stage/
+.extraido
+
+# Logs
+*.log
+
+# Sistema / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+*.bak
+*.tmp
