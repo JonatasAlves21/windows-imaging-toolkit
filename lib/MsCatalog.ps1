@@ -76,6 +76,48 @@ function Get-CatalogFileUrl {
         Select-Object -Unique
 }
 
+function Get-CatalogFileHash {
+    <#
+    .SYNOPSIS
+        Valida uma URL de arquivo do Catalog e extrai o SHA1 embutido no nome.
+
+    .DESCRIPTION
+        O Catalog publica cada arquivo como <nome>_<SHA1 em 40 hex>.msu (ou .cab),
+        e esse sufixo e o SHA1 do conteudo - conferido nos .msu baixados em 09/2026.
+        URL e nome chegam pelo DownloadDialog em HTTPS, entao conferir esse hash
+        cobre o download e o arquivo que ficou no disco de uma tentativa anterior.
+
+        Nome sem o sufixo e recusado: sem hash nao ha como saber se o pacote que o
+        DISM vai injetar e o que a Microsoft publicou. http:// vira https:// (o
+        Catalog ja entrega https; se o host recusar, o download falha em vez de
+        cair para texto claro). Qualquer outro esquema e recusado.
+    #>
+    param([Parameter(Mandatory)][string]$Uri)
+
+    $u = $null
+    if (-not [uri]::TryCreate($Uri, [UriKind]::Absolute, [ref]$u)) { throw "URL do Catalog invalida: $Uri" }
+    if ($u.Scheme -eq 'http') {
+        $b = [UriBuilder]$u
+        $b.Scheme = 'https'
+        $b.Port   = -1
+        $u = $b.Uri
+    } elseif ($u.Scheme -ne 'https') {
+        throw "URL do Catalog com esquema nao aceito ($($u.Scheme)): $Uri"
+    }
+
+    $nome = [IO.Path]::GetFileName($u.AbsolutePath)
+    $m = [regex]::Match($nome, '^[a-z0-9._-]+_([0-9a-f]{40})\.(msu|cab)$', 'IgnoreCase')
+    if (-not $m.Success) {
+        throw "Arquivo do Catalog sem SHA1 no nome (esperado <nome>_<40 hex>.msu): $nome"
+    }
+
+    [pscustomobject]@{
+        Uri  = $u.AbsoluteUri
+        Nome = $nome
+        Sha1 = $m.Groups[1].Value.ToUpperInvariant()
+    }
+}
+
 function Get-LatestCumulativeUpdate {
     <#
     .SYNOPSIS

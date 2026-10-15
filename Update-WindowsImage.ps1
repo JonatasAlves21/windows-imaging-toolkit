@@ -22,13 +22,17 @@
 
 .PARAMETER SourceIso
     ISO de origem. Se omitido, usa a ISO de Windows mais recente encontrada no
-    SSD (D:\ISO e a raiz).
+    SSD (D:\ISO e a raiz), ignorando as que este script gera (<IsoPrefix>_*.iso).
 
 .PARAMETER WindowsVersion
     Versao alvo no catalogo (24H2, 25H2...). Se omitido, e deduzida do nome da ISO.
 
 .PARAMETER ScratchRoot
-    Pasta de trabalho em NTFS. Precisa de ~40 GB livres.
+    Pasta de trabalho em NTFS. Precisa de ~40 GB livres. Use uma pasta dedicada,
+    direto na raiz do volume. Ela e criada so com Administradores e SYSTEM, sem
+    heranca; se ja existir com outro dono ou outra ACL, o script recusa (apague a
+    pasta e rode de novo). Motivo: na raiz do C:\ qualquer usuario cria pasta, e o
+    conteudo desta vai para dentro da imagem pelo DISM elevado.
 
 .PARAMETER DriverPath
     Pasta com os drivers a injetar. Padrao: D:\Drivers\_Critical
@@ -99,14 +103,19 @@ Caminho de origem tipico:
 }
 
 function Find-SourceIso {
-    param([string]$Raiz)
+    param([string]$Raiz, [Parameter(Mandatory)][string]$PrefixoGerada)
     $busca = @((Join-Path $Raiz 'ISO'), $Raiz) | Where-Object { Test-Path $_ }
+    # A ISO gerada por este script tambem casa no regex e e sempre a mais recente:
+    # sem excluir o prefixo de saida, a rodada seguinte a usaria como origem.
     $isos = foreach ($b in $busca) {
         Get-ChildItem $b -Filter *.iso -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'Win(dows)?[ _]?1[01]' }
+            Where-Object { $_.Name -match 'Win(dows)?[ _]?1[01]' -and
+                           -not $_.Name.StartsWith("${PrefixoGerada}_", [StringComparison]::OrdinalIgnoreCase) }
     }
     $escolhida = $isos | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $escolhida) { throw "Nenhuma ISO de Windows encontrada em $Raiz. Use -SourceIso." }
+    if (-not $escolhida) {
+        throw "Nenhuma ISO de Windows encontrada em $Raiz (fora as geradas, ${PrefixoGerada}_*). Use -SourceIso."
+    }
     return $escolhida.FullName
 }
 
@@ -179,7 +188,7 @@ Write-Log '=== Update-WindowsImage ===' 'STEP'
 $oscdimg = Resolve-Oscdimg
 Write-Log "oscdimg: $oscdimg" 'OK'
 
-if (-not $SourceIso) { $SourceIso = Find-SourceIso -Raiz $SsdRoot }
+if (-not $SourceIso) { $SourceIso = Find-SourceIso -Raiz $SsdRoot -PrefixoGerada $IsoPrefix }
 if (-not (Test-Path $SourceIso)) { throw "ISO nao encontrada: $SourceIso" }
 Write-Log "ISO de origem: $SourceIso" 'INFO'
 
@@ -193,6 +202,14 @@ $livreGB = [math]::Round((Get-PSDrive (Split-Path $ScratchRoot -Qualifier).TrimE
 if ($livreGB -lt 40) { throw "Espaco insuficiente em $ScratchRoot ($livreGB GB livres; precisa de ~40 GB)." }
 $fsScratch = (Get-Volume -DriveLetter (Split-Path $ScratchRoot -Qualifier).TrimEnd(':')[0]).FileSystem
 if ($fsScratch -ne 'NTFS') { throw "ScratchRoot precisa estar em NTFS (atual: $fsScratch). O DISM nao monta imagem em exFAT." }
+
+# Tudo o que fica no ScratchRoot (ISO extraida, .msu, mount) entra na imagem pelo
+# DISM elevado, entao so Administradores/SYSTEM podem mexer nele. Pasta que ja
+# existe com ACL aberta e recusada - ver Initialize-PastaProtegida (lib\Common.ps1).
+$scratch     = Initialize-PastaProtegida -Path $ScratchRoot
+$ScratchRoot = $scratch.Path
+if ($scratch.Criada) { Write-Log "Area de trabalho criada so para Administradores/SYSTEM: $ScratchRoot" 'OK' }
+else                 { Write-Log "Area de trabalho conferida (so Administradores/SYSTEM): $ScratchRoot" 'OK' }
 
 $dirIso   = Join-Path $ScratchRoot 'iso'
 $dirMount = Join-Path $ScratchRoot 'mount'
@@ -241,22 +258,29 @@ if (-not (Test-Path $installWim)) {
 }
 
 # ------------------------------------------------------ 2. baixar os pacotes
+# Cada arquivo do Catalog traz o proprio SHA1 no nome. O download - e o .msu que
+# ficou de uma tentativa anterior - so e aceito se o hash bater.
+function Get-PacotesDoCatalogo {
+    param([Parameter(Mandatory)][string]$UpdateID)
+    foreach ($u in Get-CatalogFileUrl -UpdateID $UpdateID) {
+        $arq = Get-CatalogFileHash -Uri $u
+        Get-RemoteFile -Uri $arq.Uri -OutFile (Join-Path $dirMsu $arq.Nome) `
+            -ExpectedHash $arq.Sha1 -Algorithm SHA1
+    }
+}
+
 $pacotes = @()
 if (-not $SkipUpdates) {
     Write-Log "Consultando LCU mais recente para Windows 11 $WindowsVersion ..." 'STEP'
     $lcu = Get-LatestCumulativeUpdate -Version $WindowsVersion
     Write-Log $lcu.Titulo 'INFO'
-    foreach ($u in Get-CatalogFileUrl -UpdateID $lcu.UpdateID) {
-        $pacotes += Get-RemoteFile -Uri $u -OutFile (Join-Path $dirMsu (Split-Path $u -Leaf))
-    }
+    $pacotes += @(Get-PacotesDoCatalogo -UpdateID $lcu.UpdateID)
 
     if (-not $SkipDotNet) {
         $dn = Get-LatestDotNetUpdate -Version $WindowsVersion
         if ($dn) {
             Write-Log $dn.Titulo 'INFO'
-            foreach ($u in Get-CatalogFileUrl -UpdateID $dn.UpdateID) {
-                $pacotes += Get-RemoteFile -Uri $u -OutFile (Join-Path $dirMsu (Split-Path $u -Leaf))
-            }
+            $pacotes += @(Get-PacotesDoCatalogo -UpdateID $dn.UpdateID)
         }
     }
 }

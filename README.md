@@ -62,7 +62,7 @@ flowchart LR
 | Windows 10/11 com PowerShell 5.1 ou 7 | Os scripts funcionam nos dois |
 | Administrador local | Só para `Update-WindowsImage.ps1` e `Apply-Drivers.ps1` (DISM e `pnputil`) |
 | `oscdimg.exe` (Windows ADK) | Não distribuído aqui — ver [`bin/README.md`](bin/README.md) |
-| ~40 GB livres em volume **NTFS** | Área de trabalho do DISM (`C:\VentoyBuild` por padrão) |
+| ~40 GB livres em volume **NTFS** | Área de trabalho do DISM (`C:\VentoyBuild` por padrão, só Administradores e SYSTEM) |
 | ISO oficial do Windows 11 com `install.wim` | ISOs com `install.esd` são recusadas (somente leitura) |
 
 ### Layout esperado no SSD
@@ -186,14 +186,23 @@ o pack de 3,4 GB levaria mais de 5 horas.
   intacta ao `CreateProcess`.
 - **`robocopy` retorna 1 em sucesso.** O código é normalizado para o script não
   terminar reportando falha.
+- **Área de trabalho só de administradores.** Na raiz do `C:\` qualquer usuário cria
+  pasta e ganha *Modificar* nela por herança, então dava para plantar arquivo na ISO
+  extraída ou nos `.msu` que o DISM injeta como administrador. A pasta agora nasce com
+  ACL sem herança (Administradores e SYSTEM, por SID, porque o Windows pode estar em
+  pt-BR). Se ela já existir com outro dono ou outra ACL, o script recusa em vez de corrigir.
+- **`.msu` conferido pelo SHA1 do próprio nome.** O Catalog publica
+  `<nome>_<sha1>.msu`, e o sufixo é o SHA1 do conteúdo. Tanto o download novo quanto o
+  `.msu` reaproveitado de uma tentativa anterior só entram se o hash bater. Nome sem o
+  sufixo é recusado, e `http://` vira `https://`.
+- **A ISO gerada não vira origem.** Ela casa no mesmo padrão que `Find-SourceIso`
+  procura e é sempre a mais recente. As ISOs com o prefixo de saída (`-IsoPrefix`)
+  agora ficam de fora.
 
 ---
 
 ## Pendências conhecidas
 
-- `Find-SourceIso` escolhe a ISO de Windows mais recente do drive; se a ISO gerada
-  estiver na mesma pasta, ela pode ser escolhida como origem na rodada seguinte.
-  Passe `-SourceIso` explicitamente na rotina trimestral.
 - Cobertura de fabricantes: só Dell e Lenovo.
 
 ## Licença

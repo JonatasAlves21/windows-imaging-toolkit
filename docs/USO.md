@@ -154,6 +154,7 @@ Para conferir a integridade da ISO entregue, guarde o hash ao lado dela:
 | Log diz "pacote dispensado (já coberto ou não aplicável)" | **Normal.** O catálogo entrega o cumulative junto com um checkpoint que fica redundante depois que o cumulative aplica | Nada. O script segue em frente de propósito |
 | Extração de driver pack termina sem nenhum arquivo | Espaço no caminho de destino — o extrator da Dell falha em silêncio, código 10 | Já tratado: extrai em pasta temporária sem espaço e move depois |
 | DISM recusa montar a imagem | Tentativa de montar em exFAT, que não suporta as ACLs que o DISM grava | Já tratado: a área de trabalho é `C:\VentoyBuild`, em NTFS |
+| Script recusa a área de trabalho ("não confiável", "herda permissões") | `C:\VentoyBuild` sobrou de uma execução anterior a essa proteção, ou foi criada por outro usuário: o conteúdo pode ter sido alterado | Em PowerShell elevado, `cmd /c rd /s /q C:\VentoyBuild` e rodar de novo. O script recria a pasta só com Administradores e SYSTEM |
 | Setup não lista o disco | Falta driver Intel VMD/RST no ambiente de instalação | Use a imagem gerada, não a original |
 | Máquina sem rede depois de instalar | Bootou pela imagem original | Conferir `winver`; paliativo é `Apply-Drivers.ps1` |
 | Download de driver pack a ~180 KB/s | A Dell limita por conexão, não por banda | Já tratado: 6 faixas HTTP Range paralelas |
@@ -173,4 +174,5 @@ Todos aceitam `Get-Help <script> -Full`.
 
 - **Área de trabalho** — `C:\VentoyBuild` guarda a ISO extraída e os updates. Pode
   apagar quando não for reprocessar (o script já apaga, a menos que receba
-  `-KeepScratch`).
+  `-KeepScratch`). Só Administradores e SYSTEM têm acesso a ela, porque o conteúdo
+  entra na imagem pelo DISM elevado.
