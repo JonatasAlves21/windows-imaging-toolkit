@@ -1,10 +1,16 @@
 # windows-imaging-toolkit
 
-Toolkit PowerShell que transforma um SSD USB com [Ventoy](https://www.ventoy.net) em
-um drive de formatação **que já instala o Windows 11 atualizado e com driver de
-rede**. Baixa os driver packs oficiais da Dell e da Lenovo, filtra só o que precisa
-estar dentro da imagem, aplica o cumulative update mais recente do Microsoft Update
-Catalog no `install.wim` e remonta a ISO.
+**Em poucas palavras:** a TI formata computadores a partir de um SSD USB com
+[Ventoy](https://www.ventoy.net). A imagem do Windows que estava nele era antiga.
+Depois de instalar, a máquina passava horas no Windows Update e às vezes ficava sem
+driver de rede, sem conseguir nem acessar a internet. Este toolkit gera uma imagem
+nova do Windows 11 que **já vem atualizada e com os drivers de rede da Dell e da
+Lenovo dentro**.
+
+Por dentro, os scripts PowerShell baixam os pacotes oficiais de drivers da Dell e da
+Lenovo, separam só o que precisa estar dentro da imagem, aplicam a atualização
+cumulativa mais recente do Microsoft Update Catalog no `install.wim` e montam a ISO
+de novo.
 
 > **Resultado medido:** ISO de **9,29 GB** com Windows 11 Pro 24H2 na build
 > **26100.9168** (cumulative de ago/2026 + .NET 4.8.1) e **241 MB de drivers
